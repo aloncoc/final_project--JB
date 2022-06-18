@@ -1,3 +1,106 @@
+import uuid
+import flask
+from flask import Flask, render_template, request, session, url_for, request,jsonify
+from Users import User
+from db_config import local_session
+from werkzeug.security import generate_password_hash, check_password_hash
+from DbRepo import DbRepo
+from Customers import Customer
+from flask_cors import CORS,cross_origin
+
+
+
+repo = DbRepo(local_session)
+app = Flask(__name__)
+app.config["SESSION_PERMANENT"] = False
+app.config["SESSION_TYPE"] = "filesystem"
+app.secret_key = 'secret'  # Change this!
+CORS(app)
+
+def convert_to_json(_list):  # cleaning & jsoning data recieved from SQLACLCHEMY
+    json_list = []
+    for i in _list:
+        _dict = i.__dict__
+        _dict.pop('_sa_instance_state', None)
+        json_list.append(_dict)
+    return json_list
+
+
+def add_customer_user(_input):
+    repo.add(User(username=_input['username'],
+                   password=_input['password'],
+                   email=_input['email'],
+                   user_role=2))
+    user = repo.get_by_column_value(User, User.username, _input['username'])
+    customer = repo.add(Customer(first_name=_input['first_name'],
+                        last_name=_input['last_name'],
+                        address=_input['address'],
+                        phone_number=_input['phone_number'],
+                        credit_card_number=_input['credit_card_number'],
+                        user_id=user[0].id))
+    return jsonify(customer)
+
+
+def update_customer(_input, id):
+    customers_json = convert_to_json(repo.get_all(Customers))
+    for c in customers_json:
+        if c["id"] == id:
+            c["id"] = _input["id"] if "id" in _input.keys() else None
+            c["first_name"] = _input["first_name"] if "first_name" in _input.keys() else None
+            c["last_name"] = _input["last_name"] if "last_name" in _input.keys() else None
+            c["address"] = _input["address"] if "address" in _input.keys() else None
+            c["phone_number"] = _input["phone_number"] if "phone_number" in _input.keys(
+            ) else None
+            c["credit_card_number"] = _input["credit_card_number"] if "credit_card_number" in _input.keys() else None
+            repo.update_by_id(Customers, Customers.id, id, c)
+    return jsonify(c)
+
+
+
+# localhost:5000/
+@app.route("/")
+def home():
+    try:
+        if session['remember'] == 'on':
+            return flask.redirect(url_for('login_success'))
+    except:
+        pass
+    return flask.redirect(url_for('login'))
+
+@app.route('/login', methods=['GET'])
+def login():
+    return render_template('login.html', try_again=False, registered_success=False)
+
+@app.route('/my_app', methods=['GET'])
+def login_success():
+    try:
+        user = repo.get_by_column_value(
+            User, User.username, session['uname'])
+        if user[0] != None:
+            return render_template('my_app.html')
+    except:
+        pass
+    return render_template('login.html', try_again=True, registered_success=False)
+
+@app.route('/login_process', methods=['POST'])
+def hanle_login():
+    form_data = request.form
+    username = form_data.get('uname')
+    password = form_data.get('psw')
+    print(request)
+    print(form_data)
+    try:
+        user = repo.get_by_column_value(User, User.username, username)
+        if username == user[0].username and check_password_hash(user[0].password, password):
+            session['remember'] = request.form.get('remember')
+            session['uname'] = username
+            session['pwd'] = password if session['remember'] == 'on' else None
+            return flask.redirect(url_for('login_success'))
+    except:
+        pass
+    return render_template('login.html', try_again=True)
+
+@app.route('/signup', methods=['GET'])
 def signup_page():
     return render_template('signup.html', bad_repeat=False, user_exists=False, email_exists=False, short_password=False)
 
